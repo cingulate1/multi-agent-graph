@@ -1,0 +1,13 @@
+{
+  "name": "claude-multi-agent",
+  "owner": {
+    "name": "cingulate1"
+  },
+  "plugins": [
+    {
+      "name": "claude-multi-agent",
+      "source": ".",
+      "description": "A Claude plugin that designs and then autonomously executes multi-agent workflows as directed graphs."
+    }
+  ]
+}
