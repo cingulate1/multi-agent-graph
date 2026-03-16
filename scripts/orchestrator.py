@@ -26,6 +26,19 @@ PLUGIN_ROOT = Path(__file__).parent.parent
 AGENT_TIMEOUT = 1800  # 30 minutes per agent invocation
 
 
+def _plugin_name() -> str:
+    """Read the plugin name from .claude-plugin/plugin.json."""
+    manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        return data["name"]
+    except (OSError, json.JSONDecodeError, KeyError):
+        return "claude-multi-agent"
+
+
+PLUGIN_NAME = _plugin_name()
+
+
 # ---------------------------------------------------------------------------
 # Environment
 # ---------------------------------------------------------------------------
@@ -362,13 +375,33 @@ def _expand_dynamic_templates_for_node(
             )
 
 
+def _load_prompt(run_dir: Path, agent_name: str) -> str:
+    """Load the prompt file for an agent.
+
+    Looks for {run_dir}/agents/{agent_name}-prompt.txt.  If found, returns
+    its content.  Otherwise falls back to a minimal prompt containing the
+    run directory path (legacy behaviour).
+    """
+    prompt_file = run_dir / "agents" / f"{agent_name}-prompt.txt"
+    if prompt_file.is_file():
+        text = prompt_file.read_text(encoding="utf-8").strip()
+        if text:
+            return text
+        logging.warning(f"  Prompt file for '{agent_name}' is empty, falling back to run_dir")
+    else:
+        logging.warning(f"  No prompt file for '{agent_name}', falling back to run_dir")
+    return f"Working directory: {run_dir}"
+
+
 def _build_agent_cmd(agent_name: str, run_dir: Path, agent_file: str | None = None) -> list[str]:
     """Build the Claude CLI command for an agent invocation."""
+    prompt = _load_prompt(run_dir, agent_name)
+
     cmd = [
         "claude",
-        "--agent", f"multi-agent-graph:{agent_name}",
+        "--agent", f"{PLUGIN_NAME}:{agent_name}",
         "--plugin-dir", str(PLUGIN_ROOT),
-        "-p", str(run_dir),
+        "-p", prompt,
         "--verbose",
         "--output-format", "stream-json",
         "--dangerously-skip-permissions",
@@ -427,6 +460,7 @@ def run_agent(
             stdout=f,
             stderr=subprocess.STDOUT,
             env=_agent_env(),
+            cwd=str(run_dir),
             timeout=timeout or AGENT_TIMEOUT,
         )
 
@@ -484,6 +518,7 @@ def run_agents_parallel(agents: list[dict], run_dir: Path, log_dir: Path) -> dic
             stdout=fh,
             stderr=subprocess.STDOUT,
             env=_agent_env(),
+            cwd=str(run_dir),
         )
         procs[name] = proc
         log_handles[name] = fh

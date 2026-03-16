@@ -5,11 +5,69 @@ description: "Guides the user through selecting and configuring a multi-agent ex
 
 # Multi-Agent Graph: Compose
 
-You are guiding the user through setting up a multi-agent execution pattern for their task. This is a Socratic exchange — ask questions, make recommendations, and confirm before proceeding.
+This skill instructs Claude on how to guide the user through setting up a multi-agent execution pattern for their task.
 
-## Reference Load Map
+## Phase 1: Socratic Dialogue
 
-Read only the reference for the active pattern. If the user is choosing between two close options, you may read those candidate references and no others.
+All user-facing questions happen in this phase. By the end of Phase 1, Claude should know the exact graph — every node, every edge, every model assignment — but nothing has been scaffolded or generated yet.
+
+### Understand the Task
+
+Ask the user what they want accomplished. Listen for:
+- Single clear answer vs. multiple valid perspectives
+- Subjective quality vs. objectively verifiable output
+- Whether the work can be parallelized
+- Whether iterative refinement is needed
+
+If the user already described their task when invoking the command, move directly to pattern recommendation.
+
+### The Seven Patterns
+
+#### Iterative Refinement Patterns
+
+These patterns refine a single artifact through repeated cycles.
+
+**Chained Iteration** — One agent refines its own output in a self-loop. Best when success is objectively self-checkable against a concrete constraint (word count, format compliance, coverage of specific items). The agent checks its own work and iterates until the constraint is met or the limit is reached. Not for subjective quality, source verification, or tasks where multiple perspectives matter. Topology: 1 agent, self-loop (default max 3 iterations).
+
+**RAG-Grounded Refinement** — A generator produces an artifact while a separate evaluator checks it against authoritative sources. The evaluator has access to source material that the generator may or may not see (hidden-methodology setups are supported). Best when factual fidelity or methodological compliance matters and a clear source corpus exists. Topology: 2 agents, bipartite cycle (default max 5 rounds).
+
+**Rubric-Based Refinement** — A generator produces an artifact while a separate evaluator scores it on multiple quality dimensions using a rubric. The rubric can be user-specified or evaluator-generated. The evaluator gives per-dimension scores and actionable feedback without revealing the rubric criteria to the generator. Best when quality is subjective and multi-dimensional — writing quality, analytical depth, persuasiveness. Not for single-property optimization (use Chained Iteration instead). Topology: 2 agents, bipartite cycle with an evaluator-init phase (default max 5 rounds).
+
+#### Panel Patterns
+
+These patterns use multiple agents with distinct perspectives working on the same question.
+
+**Consensus Panel** — N panelists independently address a question, then refine after reading each other's work, then a synthesizer extracts what they agree on. Disagreement is filtered out — the output is the common ground. Best when you want reliable, broadly-endorsed conclusions. Topology: 2N+1 agents (N initial + N refinement + 1 synthesizer), three-phase pipeline.
+
+**Debate Panel** — N panelists independently answer a question, then engage in R rounds of adversarial debate where they critique each other's reasoning and may switch positions. A deterministic scoring algorithm (not an LLM) selects the winning answer by tracking which answers attract converts and which get abandoned across rounds. Panelists are never told how the winner is selected. Best when you want the answer that survives structured challenge — choosing between strategies, making a contested judgment call, stress-testing a recommendation. Works best on tasks with discrete candidate answers. Topology: N*(R+1)+1 nodes (N panelists across R+1 phases + 1 scorer script), acyclic.
+
+**Dissensus Integration** — N panelists independently analyze from different lenses, then an integrator weaves their unique contributions into a unified artifact. Unlike Consensus, this preserves tension and harvests what each perspective uniquely sees rather than filtering for agreement. Best when complementary coverage matters more than convergence. Topology: N+1 agents (N panelists + 1 integrator), two-phase pipeline.
+
+#### Decomposition Pattern
+
+**Parallel Decomposition** — A decomposer partitions the task into independent assignments, then workers execute them in parallel. Worker outputs are collected, not synthesized. Best when the task naturally splits into pieces that don't need reconciliation — batch processing, independent analyses, coverage across categories. Topology: 1 decomposer + N workers (fixed or dynamic count), fan-out.
+
+### Recommend a Pattern
+
+Use the pattern descriptions above to match the user's task. Key differentiators:
+
+| If the task needs... | Use |
+|---------------------|-----|
+| Hitting a specific, checkable constraint | Chained Iteration |
+| Factual accuracy against a source corpus | RAG-Grounded Refinement |
+| Subjective multi-dimensional quality | Rubric-Based Refinement |
+| Common ground across perspectives | Consensus Panel |
+| The answer that survives adversarial challenge | Debate Panel |
+| Comprehensive coverage from complementary lenses | Dissensus Integration |
+| Throughput on independent subtasks | Parallel Decomposition |
+
+Explain WHY the recommended pattern fits. Mention 1-2 alternatives and why they're less suited. Let the user confirm or choose differently.
+
+### Configure the Pattern
+
+Once a pattern is selected, read its reference to get the pattern-specific questions:
+
+#### Reference Load Map
 
 - Chained Iteration → `${CLAUDE_PLUGIN_ROOT}/skills/compose/references/chained-iteration.md`
 - RAG-Grounded Refinement → `${CLAUDE_PLUGIN_ROOT}/skills/compose/references/rag-grounded-refinement.md`
@@ -19,77 +77,33 @@ Read only the reference for the active pattern. If the user is choosing between 
 - Dissensus Integration → `${CLAUDE_PLUGIN_ROOT}/skills/compose/references/dissensus-integration.md`
 - Parallel Decomposition → `${CLAUDE_PLUGIN_ROOT}/skills/compose/references/parallel-decomposition.md`
 
-When you begin writing agent files, also read `${CLAUDE_PLUGIN_ROOT}/skills/compose/references/subagents.md`. Use it for subagent prompt scope, frontmatter, and what generated agents can and cannot assume.
+Read only the selected pattern's reference. If choosing between two close options, you may read both candidates.
 
-## Exchange Flow
+Ask the questions from the reference's **Ask the User** section. Be conversational — suggest defaults where the reference provides them. Do not improvise pattern-specific rules; follow the reference.
 
-### Step 1: Understand the Task
+### Select Models
 
-Ask the user what they want accomplished. Listen for signals about:
-- Whether the task has a single clear answer or multiple valid perspectives
-- Whether output quality is subjective or can be objectively verified
-- Whether the work can be parallelized
-- Whether iterative refinement is needed
-
-If the user already described their task when invoking the command, skip this step and move to pattern recommendation.
-
-### Step 2: Recommend a Pattern
-
-Recommend based on task characteristics:
-
-| Signal | Recommended Pattern |
-|--------|-------------------|
-| Output must meet a measurable constraint | Chained Iteration |
-| Claims need verification against sources | RAG-Grounded Refinement |
-| Quality is subjective, multi-dimensional | Rubric-Based Refinement |
-| Want agreement across perspectives | Consensus Panel |
-| Want the most robust/defensible answer | Debate Panel |
-| Want comprehensive multi-perspective coverage | Dissensus Integration |
-| Work decomposes into independent pieces | Parallel Decomposition |
-
-Present your recommendation with a brief explanation of WHY this pattern fits. Also mention 1-2 alternatives the user might consider. Let the user confirm or choose differently.
-
-Once a pattern is selected or clearly favored, immediately read its reference from the load map above. Use that reference as the source of truth for:
-- what pattern-specific questions to ask next
-- which agents/phases the workflow requires
-- which agent should read which files
-- what cycle or parallel structure to generate
-- what pattern-specific prompt boundaries must be enforced
-
-### Step 3: Configure the Pattern
-
-Ask only the minimum pattern-specific questions required by the active reference. Be conversational, not interrogative. Suggest defaults where appropriate. Do not improvise pattern-specific topology or agent-behavior rules from memory; follow the active reference.
-
-### Step 4: Model Selection
-
-For most patterns, default to:
+Default model assignments:
 - **Opus**: All reasoning-heavy agents (panelists, evaluators, synthesizers, generators, integrators, selectors)
 - **Sonnet**: Mechanical/structured agents (workers in Parallel Decomposition)
 
-Ask the user if they want to override any model choices.
+Present the proposed model assignment for each agent in the graph. Ask the user if they want to override any.
 
-### Step 5: Tools
+### Confirm Full Configuration
 
-Ask what tools the agents will need. Defaults:
-- Read, Write, Glob, Grep — almost always needed
-- WebSearch, WebFetch — if the task involves external information
-- Bash — if the task involves running code or scripts
-
-### Step 6: Confirm
-
-Summarize the full configuration concisely:
+Summarize everything decided so far:
 - Task description
-- Pattern chosen
-- Agent count / topology
-- Pattern-specific settings from the active reference
-- Model selections
-- Tools
+- Pattern and why it was chosen
+- Agent count, names, and topology (which agents exist, what depends on what, any cycles)
+- Pattern-specific settings (from the reference's **Ask the User** answers)
+- Model assignment per agent
+- Tool assignment per agent (from the reference's **Tool Assignments** section; note any additions needed for the task, e.g. WebSearch for web research or Bash for code execution)
 
-Ask the user to confirm. If they want changes, go back to the relevant step.
+Ask the user to confirm. If they want changes, go back to the relevant step. Once confirmed, proceed to Phase 2.
 
-## After Confirmation
+## Phase 2: Generation
 
-Once the user confirms, re-read the active reference and proceed to **generation**. Do NOT ask more questions — execute the following steps:
+The user has confirmed the full configuration. No more questions — execute the following steps. Re-read the active pattern reference before generating.
 
 ### Generate Run Directory
 
@@ -103,28 +117,30 @@ Create the run directory:
 
 Where `{slug}` is a short kebab-case summary of the task (max 40 chars).
 
-### Write config.json
-
-Write the full configuration to `{run_dir}/config.json`. Include all details from the exchange.
-
 ### Generate Agent Files
 
-Write agent `.md` files to `{run_dir}/agents/`. Each agent file must have:
-- YAML frontmatter: `name`, `description`, `tools` (comma-separated), `model`
-- Markdown body: the system prompt
+For each agent required by the pattern, run:
 
-Agent prompts must:
-- State the agent's role and task clearly
-- Specify exactly what files to read (inputs) and write (outputs)
-- Include a STOP boundary: "Do NOT simulate or perform the role of any other agent"
-- Reference the run directory for all file paths: use relative paths from the run dir
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/skills/compose/scripts/create-subagent.py" <name> <description> <tools> <model> <output_dir>
+```
 
-Use the active reference to determine:
-- agent names, phases, and responsibilities
-- node dependencies and parallel groups
-- cycle type and exit signal
-- output filenames and read/write flow
-- any pattern-specific prompt boundaries or confirmation checks
+- `name` — the agent's identifier (used as the filename: `{name}.md`)
+- `description` — what the agent does
+- `tools` — comma-delimited list (e.g., `"Read,Write,WebSearch,WebFetch"`)
+- `model` — one of: `haiku`, `sonnet`, `opus`
+- `output_dir` — the run directory's agents folder: `{run_dir}/agents`
+
+### Write Agent Prompts
+
+For each agent, write a prompt file to `{run_dir}/agents/{agent-name}-prompt.txt`. The active pattern reference contains a prompt template for each subagent type — follow the template, filling in the task-specific slots marked with `{CURLY_BRACES}`.
+
+These prompt files are passed to the agent via `-p` when the orchestrator invokes it. They are the agent's only source of task context — the agent has no other conversation history.
+
+After writing all prompts, fill in the body of each agent's `.md` file:
+- Replace `{NAME}` with the agent's display name
+- Replace `{PLACEHOLDER_PERSONA}` with a brief persona reinforcing the agent's role from the prompt
+- Replace `{PLACEHOLDER_OUTPUT_FORMAT}` with the output format already specified in the prompt
 
 ### Generate execution_plan.json
 
@@ -187,9 +203,7 @@ Use `run_in_background: true` with the Bash tool. Then tell the user:
 - The run directory path
 - That you'll report the results when execution completes
 
-Do not launch workflow agents with the `Agent` tool. The orchestrator must be the only component that invokes workflow agents, because it enforces per-agent CLI tool restrictions via `--tools` derived from each agent file's `tools` frontmatter.
-
-Treat this skill's `allowed-tools` list as guidance, not as the security boundary for workflow agents. The hard enforcement point is the orchestrator's CLI invocation of each workflow agent with `--tools`.
+Do not launch workflow agents with the `Agent` tool. The orchestrator invokes them via CLI with per-agent tool restrictions.
 
 ### Monitor and Report
 

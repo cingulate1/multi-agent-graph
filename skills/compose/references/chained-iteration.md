@@ -21,6 +21,12 @@ Use a different pattern if quality is subjective (`rubric-based`), facts need so
 - Self-loop up to the agreed iteration limit.
 - Exit condition: the agent writes `output/constraint-met.flag` only when the constraint is satisfied.
 
+## Tool Assignments
+
+| Subagent | Tools |
+|----------|-------|
+| Writer/Refiner | `Read,Write` |
+
 ## Generate This Topology
 
 - Create one node with no dependencies.
@@ -31,10 +37,32 @@ Use a different pattern if quality is subjective (`rubric-based`), facts need so
   - `exit_signal_file`: `output/constraint-met.flag`
 - `final_output` is the primary artifact written by that node.
 
-## Agent Prompt Rules
+## Agent Prompt: Writer/Refiner
 
-- Tell Claude to read `output/` for any prior draft and the current iteration number.
-- Tell Claude to produce or refine the same artifact on every iteration.
-- Require an explicit self-check against the constraint before each stop.
-- Tell Claude to make surgical revisions instead of replacing good content wholesale.
+```
+## Task
 
+{TASK_DESCRIPTION}
+
+{CONTEXT_INSTRUCTION}
+
+## Constraint
+
+Your output must satisfy the following:
+{CONSTRAINT_DESCRIPTION}
+
+## Procedure
+
+1. Check if a prior draft exists at {ARTIFACT_PATH}. If so, read it and the constraint check results.
+2. If no prior draft exists, produce the initial version.
+3. If a prior draft exists, make surgical revisions to address the specific constraint violations. Do not replace good content wholesale.
+4. After writing/revising, verify the constraint yourself.
+5. If the constraint is satisfied, write the file `output/constraint-met.flag` containing the word "PASS".
+6. If the constraint is NOT satisfied, do not write the flag. Describe what remains unmet so your next iteration can address it.
+
+## Output
+
+Write your artifact to {ARTIFACT_PATH}.
+
+{OUTPUT_FORMAT}
+```

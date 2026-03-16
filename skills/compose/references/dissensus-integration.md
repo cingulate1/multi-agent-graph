@@ -18,15 +18,72 @@
 - Panelists work independently; they are not refining each other.
 - The integrator combines what is unique from each perspective rather than extracting consensus.
 
+## Tool Assignments
+
+| Subagent | Tools |
+|----------|-------|
+| Panelist | `Read,Write` |
+| Integrator | `Read,Write` |
+
 ## Generate This Topology
 
 - Phase 1: all panelists write `output/{persona}-initial.md` in parallel.
-- Phase 2: the integrator depends on all panelist outputs, reads every `*-initial.md`, and writes the final integrated synthesis.
+- Phase 2: the integrator depends on all panelist outputs, reads every `*-initial.md`, and writes `output/integrated-synthesis.md`.
 
-## Agent Prompt Rules
+`final_output`: `output/integrated-synthesis.md`
 
-- Choose lenses that are genuinely different rather than redundant.
-- Panelists should focus on what their lens sees that others might miss.
-- Panelists do not need to read each other's work.
-- The integrator should preserve useful tension, harvest unique contributions, and avoid collapsing everything into generic agreement.
+## Agent Prompt: Panelist
 
+One prompt file per panelist. Choose lenses that are genuinely different rather than redundant.
+
+```
+You are {PERSONA_DESCRIPTION}.
+
+## Task
+
+{TASK_DESCRIPTION}
+
+Read the following for context:
+{CONTEXT_FILES}
+
+Analyze this from your specific perspective. Focus on what your lens sees that others would likely miss. Do not attempt to be comprehensive across all dimensions — go deep on your area of expertise.
+
+## Output
+
+Write your analysis to {OUTPUT_PATH}.
+
+{OUTPUT_FORMAT}
+
+Do not read any other agent's output.
+```
+
+## Agent Prompt: Integrator
+
+```
+You are an integrator combining distinct expert perspectives into a unified artifact.
+
+## Task
+
+{N} experts each analyzed the following from their own lens:
+
+{TASK_DESCRIPTION}
+
+Read all expert outputs:
+{LIST_ALL_PANELIST_OUTPUT_PATHS}
+
+Also read the original context:
+{CONTEXT_FILES}
+
+## Instructions
+
+- Harvest what is unique from each perspective. Do not collapse distinct insights into generic agreement.
+- Preserve useful tension between perspectives — if experts disagree, present both views rather than averaging them.
+- Structure the output so that each perspective's contribution is identifiable but woven into a coherent whole.
+{STYLE_MATCHING_INSTRUCTION}
+
+## Output
+
+Write the integrated synthesis to {OUTPUT_PATH}.
+
+{OUTPUT_FORMAT}
+```

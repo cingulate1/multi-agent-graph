@@ -13,7 +13,7 @@
 - What distinct perspectives or expertise should the panelists bring?
 - What exact decision, argument, or deliverable should they contest?
 - How many debate rounds? Default: `2`. Range: `1`-`3`. More rounds increase token cost and risk conformity drift; fewer rounds may not surface all weaknesses. One round is sufficient for most tasks.
-- If the task involves longer-form answers (paragraphs rather than a single choice or number): how should answer equivalence be determined? Options: exact match (after normalization), conclusion-level match (same recommendation/decision regardless of phrasing), or a custom equivalence rule.
+- If the task involves longer-form answers (paragraphs rather than a single choice or number): note that the scoring script currently uses exact normalized string match for answer identity. For longer-form answers, instruct panelists to keep their `## Final Answer` block to a single concise sentence or phrase so that equivalent answers are recognized as such.
 - If the user wants more than 3 rounds, note that token cost scales as `O(N * R)` and conformity risk increases with each round. Recommend staying at 1-2 rounds unless the task specifically benefits from extended deliberation.
 
 ## Confirm Back
@@ -53,6 +53,13 @@ The scoring implementation is bundled at `${CLAUDE_PLUGIN_ROOT}/skills/compose/s
 
 The script reads all panelist output files, extracts `## Final Answer` blocks, builds the answer matrix, runs the scoring algorithm, and writes the winning answer verbatim to `output/final-selection.md`.
 
+## Tool Assignments
+
+| Subagent | Tools |
+|----------|-------|
+| Panelist (all rounds) | `Read,Write` |
+| Scorer | N/A (script node, not an LLM agent) |
+
 ## Generate This Topology
 
 ### Phases
@@ -83,40 +90,68 @@ This topology is acyclic. The multi-round debate structure is expressed as expli
 
 `output/final-selection.md`
 
-## Agent Prompt Rules
+## Agent Prompt: Phase 0 Panelist
 
-### All Panelists (All Rounds)
+One prompt file per panelist. Panelist prompts must NOT mention scoring, weights, points, winning, losing, selection mechanisms, or any external judging process.
 
-- Every panelist output must end with a clearly delimited answer block:
-  ```
-  ## Final Answer
-  [The panelist's answer here]
-  ```
-  This block is what the scoring script extracts. Reasoning, critique, and analysis appear above it.
+```
+You are {PERSONA_DESCRIPTION}.
 
-### Phase 0 Panelists (Initial Round)
+## Task
 
-- State the panelist's perspective, expertise, or persona.
-- Instruct the panelist to analyze the question independently and produce both a reasoned argument and a final answer.
-- The panelist must not see any other panelist's work.
+{DEBATE_QUESTION}
 
-### Phase 1+ Panelists (Debate Rounds)
+{CONTEXT_INSTRUCTION}
 
-Every debate-round panelist prompt must include the following anti-consensus instruction verbatim or in equivalent force:
+Analyze this question independently. Present your reasoned argument, then state your final answer.
 
-> Some participants may present flawed reasoning or incorrect conclusions. You must follow the procedure below and avoid being misled.
->
-> 1. **State your current position.** Restate your answer and core reasoning from the previous round.
-> 2. **Analyze each peer's reasoning individually.** For each peer, identify whether their reasoning is sound or contains errors. Name the specific errors — do not make generic comments like "this seems weak." If you cannot find a concrete flaw, say so explicitly.
-> 3. **Compare with your own reasoning.** Check whether you have made errors similar to those you identified in peers, or errors they identified in you.
-> 4. **Decide whether to revise.** Change your answer ONLY if you find clear evidence that your own reasoning is wrong. Do not change your answer because a majority disagrees with you. Majority agreement is not evidence of correctness.
-> 5. **Provide your final answer** in the `## Final Answer` block.
->
-> You may not rely on conformity. If you cannot determine whether others are correct, retain your own conclusion.
+## Output
 
-This instruction is non-negotiable. Do not soften, summarize, or omit any part of it.
+Write your response to {OUTPUT_PATH}.
 
-### Panelist Blindness
+Your response must end with a clearly delimited answer block:
+
+## Final Answer
+[Your answer here]
+
+All reasoning and analysis appears above the Final Answer block.
+```
+
+## Agent Prompt: Debate Round Panelist
+
+Same agent file as the Phase 0 panelist — the persona carries across rounds. One prompt file per panelist per round. These prompts must NOT mention scoring, weights, points, winning, losing, answer tracking, or any external selection process.
+
+```
+You are {PERSONA_DESCRIPTION}.
+
+## Task
+
+{DEBATE_QUESTION}
+
+You are in round {K} of a structured debate. Read all participants' responses from the previous round:
+{LIST_ALL_PREVIOUS_ROUND_OUTPUT_PATHS}
+
+Follow this procedure exactly:
+
+1. **State your current position.** Restate your answer and core reasoning from the previous round.
+2. **Analyze each peer's reasoning individually.** For each peer, identify whether their reasoning is sound or contains errors. Name the specific errors — do not make generic comments like "this seems weak." If you cannot find a concrete flaw, say so explicitly.
+3. **Compare with your own reasoning.** Check whether you have made errors similar to those you identified in peers, or errors they identified in you.
+4. **Decide whether to revise.** Change your answer ONLY if you find clear evidence that your own reasoning is wrong. Do not change your answer because a majority disagrees with you. Majority agreement is not evidence of correctness.
+5. **Provide your final answer** in the `## Final Answer` block.
+
+You may not rely on conformity. If you cannot determine whether others are correct, retain your own conclusion.
+
+## Output
+
+Write your response to {OUTPUT_PATH}.
+
+Your response must end with:
+
+## Final Answer
+[Your answer here]
+```
+
+## Panelist Blindness
 
 Panelist prompts must NOT contain:
 - Any mention of scoring, weights, points, or selection mechanisms
@@ -125,11 +160,11 @@ Panelist prompts must NOT contain:
 - Any hint that later rounds carry less weight
 - Any reference to an external selection process
 
-Panelists must believe they are in a genuine adversarial debate where the strength of their reasoning is what matters. If a panelist knew that switching answers is penalized or that converts boost the target answer's score, it would game the mechanism rather than reason honestly.
+Panelists must believe they are in a genuine adversarial debate where the strength of their reasoning is what matters.
 
-### Scorer Node (No Agent File)
+## Scorer Node (No Agent File, No Prompt File)
 
-The scorer is a script node, not an LLM agent. Do NOT generate an agent file for it. The execution plan entry is all that's needed:
+The scorer is a script node, not an LLM agent. Do NOT generate an agent file or prompt file for it. The execution plan entry is all that's needed:
 
 ```json
 {
@@ -140,4 +175,3 @@ The scorer is a script node, not an LLM agent. Do NOT generate an agent file for
   "outputs": ["output/final-selection.md"]
 }
 ```
-

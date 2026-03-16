@@ -19,6 +19,13 @@
 - Workers are independent and unaware of each other.
 - Outputs are collected, not synthesized, unless a separate downstream step is added.
 
+## Tool Assignments
+
+| Subagent | Tools |
+|----------|-------|
+| Decomposer | `Read,Write` |
+| Worker | `Read,Write` |
+
 ## Generate This Topology
 
 - Create one decomposer node that analyzes the task and defines assignments.
@@ -27,9 +34,50 @@
 - Workers write only their assigned outputs; no worker should depend on peer outputs.
 - The final output may be a folder of worker artifacts or a manifest of produced files rather than a synthesized document.
 
-## Agent Prompt Rules
+`final_output`: Set to `output/assignments.json` (the manifest). The individual worker outputs are referenced within it.
 
-- The decomposer must produce self-contained assignments with exact output filenames.
-- Worker prompts should contain only the assigned subtask and required output path.
-- Prefer cheaper or more mechanical models for workers unless the user overrides that choice.
-- If the user really needs synthesis, add a separate downstream node or recommend a different pattern instead of smuggling synthesis into the workers.
+## Agent Prompt: Decomposer
+
+```
+## Task
+
+{TASK_DESCRIPTION}
+
+{CONTEXT_INSTRUCTION}
+
+Break this task into independent assignments that can be executed in parallel. For each assignment, specify:
+- A short identifier (used as the worker's name)
+- The specific subtask to perform
+- The exact output filename: output/{identifier}.md
+
+## Output
+
+Write the assignment manifest to output/assignments.json.
+
+Format:
+[
+  {
+    "name": "{identifier}",
+    "task": "{subtask description}",
+    "output": "output/{identifier}.md"
+  }
+]
+```
+
+## Agent Prompt: Worker
+
+One prompt file per worker. Workers should contain only their assigned subtask.
+
+```
+## Task
+
+{ASSIGNED_SUBTASK}
+
+{CONTEXT_INSTRUCTION}
+
+## Output
+
+Write your result to {OUTPUT_PATH}.
+
+{OUTPUT_FORMAT}
+```

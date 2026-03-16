@@ -18,9 +18,19 @@
 
 - Two agents: generator and evaluator.
 - The source location(s) and verification focus.
-- The tool split between generator and evaluator.
 - If evaluator-only or hidden-methodology is requested, state separately what the generator may see and what only the evaluator may see.
 - Exit condition: evaluator writes `output/evaluation-pass.flag` only when no material issues remain.
+
+## Tool Assignments
+
+| Subagent | Tools |
+|----------|-------|
+| Generator | `Read,Write` |
+| Evaluator (local sources) | `Read,Write,Glob,Grep` |
+| Evaluator (web sources) | `Read,Write,WebSearch,WebFetch` |
+| Evaluator (both) | `Read,Write,Glob,Grep,WebSearch,WebFetch` |
+
+Select the evaluator's tool set based on the user's answer to "What sources should the evaluator verify against: local files/directories, web, or both?"
 
 ## Generate This Topology
 
@@ -34,48 +44,79 @@
   - `exit_signal_file`: `output/evaluation-pass.flag`
 - `final_output` is the generator's artifact.
 
-## Agent Prompt Rules
+## Agent Prompt: Generator
 
-### Generator
+If hidden-methodology is active, the generator prompt must not mention the framework name, source path, corpus, or methodology language anywhere.
 
-- Reads the task brief and the latest evaluator feedback, then revises the same artifact.
-- On subsequent rounds, the generator must address every issue raised in the evaluator's feedback before rewriting.
+```
+## Task
 
-### Evaluator
+{TASK_DESCRIPTION}
 
-The evaluator prompt must instruct the evaluator to assess the artifact across two tiers, in order. Both tiers must be satisfied before the pass flag can be written.
+{CONTEXT_INSTRUCTION — only what the generator is allowed to see}
 
-**Tier 1 — Factual fidelity.** Every factual claim in the artifact is checked against the source corpus. Any claim that contradicts, misrepresents, softens an exact value with hedging language, or cannot be traced to the source is flagged as an error.
+## Procedure
 
-**Tier 2 — Source utilization and structural quality.** The evaluator checks whether the artifact demonstrates adequate engagement with the source material. Specifically:
+1. Check if evaluator feedback exists at output/evaluation-feedback.md. If so, read it.
+2. If no feedback exists, produce the initial draft.
+3. If feedback exists, address every issue raised before rewriting. Do not skip any flagged issue.
 
-- **Coverage**: Are there significant areas of the source corpus that the artifact ignores or barely touches? The evaluator should identify specific sections, concepts, or data from the sources that are absent from the artifact but relevant to the task.
-- **Depth of synthesis**: Does the artifact merely restate source material in sequence, or does it integrate and connect ideas across source sections? Surface-level paraphrase of individual source passages, even if factually accurate, is insufficient when the task calls for a synthesized treatment.
-- **Fitness for purpose**: Given the stated task, does the artifact actually serve that purpose? A technically accurate document can still fail if it is structured poorly for its audience, omits practical implications the sources support, or reads as a mechanical transcription rather than an authored work.
+## Output
 
-The evaluator prompt must instruct the evaluator to write specific, actionable feedback for every issue found in either tier — not just a label or status. Each issue should state what is wrong, where the relevant source material is, and what the generator should do differently.
+Write your artifact to {ARTIFACT_PATH}.
 
-#### Why Both Tiers Are Necessary
+{OUTPUT_FORMAT}
+```
 
-Compose should understand the failure mode this structure prevents: a competent generator will typically produce a first draft that is factually accurate — the source material is right in front of it, and modern LLMs are good at faithful extraction. If the evaluator only checks factual fidelity (Tier 1), it finds nothing wrong on round 1 and immediately writes the pass flag. The refinement cycle exits after a single round, producing an artifact that is correct but shallow. Tier 2 ensures the evaluator engages with whether the artifact is genuinely good, not just whether it avoids being wrong.
+## Agent Prompt: Evaluator
 
-### Evaluator Pass Criteria
+The evaluator prompt must instruct assessment across two tiers, in order. Both tiers must be satisfied before the pass flag can be written.
 
-The evaluator prompt must state the pass criteria as a conjunction:
+```
+## Task
 
-1. Zero factual errors remain (Tier 1 is clean).
-2. No significant coverage gaps, synthesis weaknesses, or fitness-for-purpose problems remain (Tier 2 is clean).
+Evaluate the artifact at {ARTIFACT_PATH} against the source material.
 
-The evaluator writes `output/evaluation-pass.flag` only when both conditions hold simultaneously. If Tier 1 is clean but Tier 2 has issues, the evaluator must not pass — it writes feedback and the cycle continues.
+## Sources
 
-### Generating Effective Evaluator Prompts
+{SOURCE_PATHS_AND_RETRIEVAL_INSTRUCTIONS}
 
-When composing the evaluator's system prompt, apply these principles:
+## Evaluation Procedure
 
-- **Make Tier 2 criteria concrete for the task.** Do not simply paste generic instructions about "coverage" and "synthesis." Translate them into task-specific questions. For a technical overview: "Does the overview explain how components X, Y, and Z interact, or does it just describe each in isolation?" For a methodology application: "Does the plan use the framework's own vocabulary and structural elements, or does it arrive at similar conclusions through parallel reasoning?"
-- **Front-load the evaluator's obligation to find issues.** The evaluator's first action after reading should be identifying what is missing or weak, not confirming what is present. Structure the prompt so the evaluator inventories gaps before cataloging verified claims.
-- **Require the evaluator to cite source locations for Tier 2 feedback.** When the evaluator says the artifact has a coverage gap, it must point to specific sections or passages in the source that should have been incorporated. This prevents vague feedback ("could be more thorough") that gives the generator nothing to work with.
-- **Separate the evaluation from the pass decision.** The evaluator should complete its full written assessment before deciding whether to pass. Prompts that interleave assessment with the pass decision encourage premature closure — the evaluator starts confirming claims, builds momentum toward "everything checks out," and writes the pass flag before considering Tier 2.
+Assess the artifact in two tiers, in order. Complete Tier 1 fully before beginning Tier 2.
+
+### Tier 1 — Factual Fidelity
+
+Check every factual claim in the artifact against the source corpus. Flag any claim that:
+- Contradicts the source
+- Misrepresents the source
+- Softens an exact value with hedging language
+- Cannot be traced to any source
+
+### Tier 2 — Source Utilization and Structural Quality
+
+{TASK_SPECIFIC_TIER_2_CRITERIA}
+
+Check the following:
+- **Coverage**: Are there significant areas of the source corpus that the artifact ignores? Identify specific sections or passages from the sources that are absent but relevant.
+- **Depth of synthesis**: Does the artifact integrate ideas across source sections, or merely restate them in sequence?
+- **Fitness for purpose**: Given the stated task, does the artifact actually serve that purpose?
+
+### Pass Decision
+
+After completing both tiers in full, decide:
+- If zero factual errors remain AND no significant coverage, synthesis, or fitness issues remain: write the file `output/evaluation-pass.flag` containing the word "PASS".
+- Otherwise: do NOT write the flag.
+
+## Output
+
+Write your evaluation to output/evaluation-feedback.md.
+
+For every issue found in either tier, state:
+1. What is wrong
+2. Where the relevant source material is
+3. What the generator should do differently
+```
 
 ## Hard Boundary for Evaluator-Only or Hidden-Methodology Setups
 
