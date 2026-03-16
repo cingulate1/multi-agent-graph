@@ -34,8 +34,8 @@ WINDOW_HEIGHT = 700
 CANVAS_PAD = 60
 CANVAS_USABLE_FRACTION = 0.7814  # Events panel occupies ~21.86% of window height
 
-NODE_WIDTH = 180
-NODE_HEIGHT = 68
+NODE_WIDTH = 220
+NODE_HEIGHT = 74
 NODE_CORNER_RADIUS = 10
 NODE_FONT = ("Segoe UI", 8)
 NODE_FONT_BOLD = ("Segoe UI", 9, "bold")
@@ -646,7 +646,7 @@ class GraphRenderer:
         return self.canvas.create_polygon(points, smooth=True, **kwargs)
 
     @staticmethod
-    def _truncate(name: str, max_chars: int = 22) -> str:
+    def _truncate(name: str, max_chars: int = 28) -> str:
         if len(name) <= max_chars:
             return name
         return name[:max_chars - 1] + "\u2026"
