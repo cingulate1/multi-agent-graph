@@ -13,6 +13,7 @@
 - What distinct perspectives or expertise should the panelists bring?
 - What exact decision, argument, or deliverable should they contest?
 - How many debate rounds? Default: `2`. Range: `1`-`3`. More rounds increase token cost and risk conformity drift; fewer rounds may not surface all weaknesses. One round is sufficient for most tasks.
+- How many evaluation samples per scoring question? Default: `3`. Range: `1`-`7`. More samples reduce variance in Haiku's semantic judgments but increase scoring time linearly. `3` is sufficient for most tasks.
 - Answer format: panelists should include a `## Final Answer` block at the end of their output. The scoring system uses Haiku-based semantic evaluation to assess position changes and convergence across rounds, so answers do not need to be short labels — longer-form answers work fine.
 - If the user wants more than 3 rounds, note that token cost scales as `O(N * R)` and conformity risk increases with each round. Recommend staying at 1-2 rounds unless the task specifically benefits from extended deliberation.
 
@@ -21,7 +22,7 @@
 - `N` panelists. Each panelist uses one agent file but is instantiated across multiple phases.
 - `R` debate rounds (default `2`). The topology has `R + 1` phases of panelist work plus one final scoring phase.
 - Phase 0 is independent answer generation. Phases 1 through R are adversarial debate rounds. The final phase is semantic evaluation (Haiku) followed by deterministic scoring.
-- The winner is selected by a two-stage scoring pipeline: Haiku evaluates semantic position changes and convergence across rounds (3 samples per evaluation, SHA-256 seeded), then a deterministic algorithm computes final scores from those evaluations.
+- The winner is selected by a two-stage scoring pipeline: Haiku evaluates semantic position changes and convergence across rounds (`S` samples per evaluation, SHA-256 seeded), then a deterministic algorithm computes final scores from those evaluations.
 - Panelists are never told how the winner is selected. Their prompts contain zero information about the scoring mechanism.
 - Final output is the highest-scoring answer, copied verbatim from the panelist that produced it.
 
@@ -102,10 +103,10 @@ Each debate-round node uses the same agent file as the corresponding panelist's 
 
 The scoring pipeline has two sequential script nodes — neither is an LLM agent (though the first invokes Haiku internally):
 
-1. **`semantic-evaluator`**: Runs `run_semantic_evals.py` with `--samples 3`. Spawns independent Haiku calls to evaluate position changes and convergence across rounds. Writes CSV files to `output/evaluations/`.
-2. **`scorer`**: Runs `score_debate_semantic.py` with `--samples 3`. Reads the CSVs, computes final scores, writes `output/final-selection.md`.
+1. **`semantic-evaluator`**: Runs `run_semantic_evals.py` with `--samples S`. Spawns independent Haiku calls to evaluate position changes and convergence across rounds. Writes CSV files to `output/evaluations/`.
+2. **`scorer`**: Runs `score_debate_semantic.py` with `--samples S`. Reads the CSVs, computes final scores, writes `output/final-selection.md`.
 
-The `--samples` argument is passed via the `script_args` field in the execution plan node definition.
+`S` is the evaluation sample count chosen during configuration (default `3`). Both scripts must receive the same value. The `--samples` argument is passed via the `script_args` field in the execution plan node definition.
 
 ### No Cycles
 
@@ -196,7 +197,7 @@ The scoring pipeline uses two sequential script nodes. Do NOT generate agent fil
   "name": "semantic-evaluator",
   "node_type": "script",
   "script": "run_semantic_evals.py",
-  "script_args": ["--samples", "3"],
+  "script_args": ["--samples", "<S>"],
   "depends_on": ["<all round-R node names>"],
   "outputs": []
 },
@@ -204,7 +205,7 @@ The scoring pipeline uses two sequential script nodes. Do NOT generate agent fil
   "name": "scorer",
   "node_type": "script",
   "script": "score_debate_semantic.py",
-  "script_args": ["--samples", "3"],
+  "script_args": ["--samples", "<S>"],
   "depends_on": ["semantic-evaluator"],
   "outputs": ["output/final-selection.md"]
 }
