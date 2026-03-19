@@ -6,8 +6,12 @@ For each round transition, for each panelist, asks two questions:
   Q2: To what extent did each other panelist move toward this panelist's answer? (1-5)
 
 Each evaluation is an independent Haiku invocation with no knowledge of the
-larger workflow. A SHA-256 hash of the evaluation index is prepended as a
-task ID to seed distinct inference contexts across repeated samples.
+larger workflow. Samples cycle through three prompt variants to decorrelate
+repeated evaluations:
+  Variant 0: Standard 1-5 numeric scale, Respondent A/B labels
+  Variant 1: A-E letter scale, Respondent 1/2 labels
+  Variant 2: Reversed 5-1 numeric scale, Respondent A/B labels
+All responses are normalized back to canonical 1-5 before writing.
 
 Writes one CSV file per evaluation to output/evaluations/eval-NNNN.csv,
 each containing a single integer 1-5.
@@ -103,13 +107,47 @@ def task_id_for(eval_index: int) -> str:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
+def _prompt_variant(sample: int) -> int:
+    """Return the prompt variant (0, 1, or 2) for a given sample index."""
+    return sample % 3
+
+
 def build_q1_prompt(
     task_id: str,
     panelist: str,
     answer_before: str,
     answer_after: str,
+    variant: int = 0,
 ) -> str:
     """Build the Q1 prompt: how much did this panelist change their answer?"""
+    if variant == 1:
+        scale = (
+            "A = No change at all — the same recommendation/conclusion, possibly reworded\n"
+            "B = Minor refinement — same core position with small additions or clarifications\n"
+            "C = Moderate shift — the core recommendation is recognizably similar but with significant modifications\n"
+            "D = Major change — the conclusion has substantially shifted, though some elements remain\n"
+            "E = Complete reversal — an entirely different position\n\n"
+            "Respond with a single letter from A to E. Nothing else."
+        )
+    elif variant == 2:
+        scale = (
+            "5 = No change at all — the same recommendation/conclusion, possibly reworded\n"
+            "4 = Minor refinement — same core position with small additions or clarifications\n"
+            "3 = Moderate shift — the core recommendation is recognizably similar but with significant modifications\n"
+            "2 = Major change — the conclusion has substantially shifted, though some elements remain\n"
+            "1 = Complete reversal — an entirely different position\n\n"
+            "Respond with a single integer from 1 to 5. Nothing else."
+        )
+    else:
+        scale = (
+            "1 = No change at all — the same recommendation/conclusion, possibly reworded\n"
+            "2 = Minor refinement — same core position with small additions or clarifications\n"
+            "3 = Moderate shift — the core recommendation is recognizably similar but with significant modifications\n"
+            "4 = Major change — the conclusion has substantially shifted, though some elements remain\n"
+            "5 = Complete reversal — an entirely different position\n\n"
+            "Respond with a single integer from 1 to 5. Nothing else."
+        )
+
     return f"""<taskID>{task_id}</taskID>
 
 You are evaluating how much a respondent changed their position between two rounds of a discussion.
@@ -128,13 +166,7 @@ Here is the respondent's answer in the later round:
 
 To what extent did the respondent change their core position?
 
-1 = No change at all — the same recommendation/conclusion, possibly reworded
-2 = Minor refinement — same core position with small additions or clarifications
-3 = Moderate shift — the core recommendation is recognizably similar but with significant modifications
-4 = Major change — the conclusion has substantially shifted, though some elements remain
-5 = Complete reversal — an entirely different position
-
-Respond with a single integer from 1 to 5. Nothing else."""
+{scale}"""
 
 
 def build_q2_prompt(
@@ -144,39 +176,68 @@ def build_q2_prompt(
     other_answer_before: str,
     other_answer_after: str,
     panelist_answer: str,
+    variant: int = 0,
 ) -> str:
     """Build a Q2 prompt: how much did the other panelist move toward this panelist?"""
+    if variant == 1:
+        ref_label, other_label = "Respondent 1", "Respondent 2"
+        ref_tag, other_before_tag, other_after_tag = "respondent_1", "respondent_2_before", "respondent_2_after"
+        scale = (
+            "A = No movement toward 1 — 2's position is equally or more distant from 1\n"
+            "B = Slight movement — 2 adopted minor elements of 1's position\n"
+            "C = Moderate convergence — 2's new position shares significant common ground with 1\n"
+            "D = Strong convergence — 2's new position is closely aligned with 1\n"
+            "E = Full adoption — 2 essentially adopted 1's position\n\n"
+            "Respond with a single letter from A to E. Nothing else."
+        )
+    elif variant == 2:
+        ref_label, other_label = "Respondent A", "Respondent B"
+        ref_tag, other_before_tag, other_after_tag = "respondent_a", "respondent_b_before", "respondent_b_after"
+        scale = (
+            "5 = No movement toward A — B's position is equally or more distant from A\n"
+            "4 = Slight movement — B adopted minor elements of A's position\n"
+            "3 = Moderate convergence — B's new position shares significant common ground with A\n"
+            "2 = Strong convergence — B's new position is closely aligned with A\n"
+            "1 = Full adoption — B essentially adopted A's position\n\n"
+            "Respond with a single integer from 1 to 5. Nothing else."
+        )
+    else:
+        ref_label, other_label = "Respondent A", "Respondent B"
+        ref_tag, other_before_tag, other_after_tag = "respondent_a", "respondent_b_before", "respondent_b_after"
+        scale = (
+            "1 = No movement toward A — B's position is equally or more distant from A\n"
+            "2 = Slight movement — B adopted minor elements of A's position\n"
+            "3 = Moderate convergence — B's new position shares significant common ground with A\n"
+            "4 = Strong convergence — B's new position is closely aligned with A\n"
+            "5 = Full adoption — B essentially adopted A's position\n\n"
+            "Respond with a single integer from 1 to 5. Nothing else."
+        )
+
     return f"""<taskID>{task_id}</taskID>
 
 You are evaluating whether one respondent's position moved closer to another respondent's position between two rounds of a discussion.
 
-Here is Respondent A's position (the reference position):
+Here is {ref_label}'s position (the reference position):
 
-<respondent_a>
+<{ref_tag}>
 {panelist_answer}
-</respondent_a>
+</{ref_tag}>
 
-Here is Respondent B's position in the earlier round:
+Here is {other_label}'s position in the earlier round:
 
-<respondent_b_before>
+<{other_before_tag}>
 {other_answer_before}
-</respondent_b_before>
+</{other_before_tag}>
 
-Here is Respondent B's position in the later round:
+Here is {other_label}'s position in the later round:
 
-<respondent_b_after>
+<{other_after_tag}>
 {other_answer_after}
-</respondent_b_after>
+</{other_after_tag}>
 
-To what extent did Respondent B move toward Respondent A's position?
+To what extent did {other_label} move toward {ref_label}'s position?
 
-1 = No movement toward A — B's position is equally or more distant from A
-2 = Slight movement — B adopted minor elements of A's position
-3 = Moderate convergence — B's new position shares significant common ground with A
-4 = Strong convergence — B's new position is closely aligned with A
-5 = Full adoption — B essentially adopted A's position
-
-Respond with a single integer from 1 to 5. Nothing else."""
+{scale}"""
 
 
 # ---------------------------------------------------------------------------
@@ -211,12 +272,31 @@ def invoke_haiku(prompt: str, timeout: int = HAIKU_TIMEOUT) -> str:
     return result.stdout.strip()
 
 
-def parse_score(raw: str, eval_index: int) -> int:
-    """Extract a 1-5 integer from Haiku's response."""
-    # Try to find a digit 1-5 in the response
-    for char in raw:
-        if char in "12345":
-            return int(char)
+_LETTER_MAP = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5,
+               "a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
+
+
+def parse_score(raw: str, eval_index: int, variant: int = 0) -> int:
+    """Extract a 1-5 canonical score from Haiku's response.
+
+    Variant 0: 1-5 numeric, ascending (no transform)
+    Variant 1: A-E letters (map to 1-5)
+    Variant 2: 5-1 numeric, reversed (invert: canonical = 6 - raw)
+    """
+    if variant == 1:
+        for char in raw:
+            if char in _LETTER_MAP:
+                return _LETTER_MAP[char]
+        # Fall back to numeric in case model ignored the letter instruction
+        for char in raw:
+            if char in "12345":
+                return int(char)
+    else:
+        for char in raw:
+            if char in "12345":
+                score = int(char)
+                return (6 - score) if variant == 2 else score
+
     raise RuntimeError(
         f"Evaluation {eval_index:04d}: could not parse score from Haiku response: '{raw[:100]}'"
     )
@@ -270,6 +350,7 @@ def run_evaluations(
             for sample in range(n_samples):
                 eval_index += 1
                 csv_path = eval_dir / f"eval-{eval_index:04d}.csv"
+                variant = _prompt_variant(sample)
 
                 # Skip if already evaluated (resume support)
                 if csv_path.is_file():
@@ -279,12 +360,12 @@ def run_evaluations(
                     continue
 
                 tid = task_id_for(eval_index)
-                prompt = build_q1_prompt(tid, panelist, answer_before, answer_after)
+                prompt = build_q1_prompt(tid, panelist, answer_before, answer_after, variant)
 
-                log.info(f"  eval-{eval_index:04d} Q1 {panelist} r{round_from}->r{round_to} sample {sample+1}/{n_samples}")
+                log.info(f"  eval-{eval_index:04d} Q1 {panelist} r{round_from}->r{round_to} sample {sample+1}/{n_samples} v{variant}")
                 try:
                     raw = invoke_haiku(prompt)
-                    score = parse_score(raw, eval_index)
+                    score = parse_score(raw, eval_index, variant)
                 except (RuntimeError, subprocess.TimeoutExpired) as e:
                     log.error(f"  eval-{eval_index:04d} FAILED: {e}")
                     raise
@@ -303,6 +384,7 @@ def run_evaluations(
                 for sample in range(n_samples):
                     eval_index += 1
                     csv_path = eval_dir / f"eval-{eval_index:04d}.csv"
+                    variant = _prompt_variant(sample)
 
                     if csv_path.is_file():
                         existing = int(csv_path.read_text(encoding="utf-8").strip())
@@ -314,15 +396,16 @@ def run_evaluations(
                     prompt = build_q2_prompt(
                         tid, panelist, other,
                         other_before, other_after, panelist_ref,
+                        variant,
                     )
 
                     log.info(
                         f"  eval-{eval_index:04d} Q2 {other}->toward {panelist} "
-                        f"r{round_from}->r{round_to} sample {sample+1}/{n_samples}"
+                        f"r{round_from}->r{round_to} sample {sample+1}/{n_samples} v{variant}"
                     )
                     try:
                         raw = invoke_haiku(prompt)
-                        score = parse_score(raw, eval_index)
+                        score = parse_score(raw, eval_index, variant)
                     except (RuntimeError, subprocess.TimeoutExpired) as e:
                         log.error(f"  eval-{eval_index:04d} FAILED: {e}")
                         raise
