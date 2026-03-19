@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import tkinter as tk
 from datetime import datetime, timezone
@@ -26,8 +27,10 @@ from typing import Any, Dict, List, Optional, Tuple
 # Constants
 # ---------------------------------------------------------------------------
 
-POLL_INTERVAL_MS = 1000
+POLL_INTERVAL_MS = 2000
 TIMER_INTERVAL_MS = 200
+STALE_THRESHOLD_S = 30  # If status.json hasn't been updated for this many seconds while
+                        # agents are "running", mark them as failed (orchestrator likely dead)
 
 WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 700
@@ -204,22 +207,52 @@ def compute_layout(
     left = CANVAS_PAD
     top = CANVAS_PAD
 
+    # Maximum columns that can fit side by side
+    max_cols = max(1, int((canvas_width - 2 * NODE_MARGIN_X) // (NODE_WIDTH + 24)))
+
     # Helpers
     def center_one() -> Dict[str, Tuple[float, float]]:
         cx = canvas_width / 2
         cy = effective_height / 2
         return {names[0]: (cx, cy)}
 
-    def row_positions(row_names: List[str], y: float) -> Dict[str, Tuple[float, float]]:
+    def _place_single_row(row_names: List[str], y: float) -> Dict[str, Tuple[float, float]]:
+        """Place a list of names in a single horizontal row at the given y."""
         if not row_names:
             return {}
         n = len(row_names)
         if n == 1:
             return {row_names[0]: (canvas_width / 2, y)}
-        spacing = min(usable_w / (n - 1), NODE_WIDTH * 1.6)
+        spacing = min(usable_w / max(n - 1, 1), NODE_WIDTH * 1.6)
         total = spacing * (n - 1)
         start_x = (canvas_width - total) / 2
         return {name: (start_x + i * spacing, y) for i, name in enumerate(row_names)}
+
+    def row_positions(
+        row_names: List[str],
+        y_center: float,
+        row_gap: float = NODE_HEIGHT * 1.4,
+    ) -> Dict[str, Tuple[float, float]]:
+        """Place names in a grid that wraps when exceeding max_cols.
+
+        When all names fit in one row, behaves like the old row_positions.
+        Otherwise splits into ceil(n/max_cols) sub-rows centered around y_center.
+        """
+        if not row_names:
+            return {}
+        n = len(row_names)
+        if n <= max_cols:
+            return _place_single_row(row_names, y_center)
+        # Wrap into a grid
+        num_rows = math.ceil(n / max_cols)
+        total_h = row_gap * (num_rows - 1)
+        start_y = y_center - total_h / 2
+        positions: Dict[str, Tuple[float, float]] = {}
+        for r in range(num_rows):
+            chunk = row_names[r * max_cols : (r + 1) * max_cols]
+            y = start_y + r * row_gap
+            positions.update(_place_single_row(chunk, y))
+        return positions
 
     # --- Chained iteration (self-loop) ---
     if pattern == "chained-iteration":
@@ -272,9 +305,11 @@ def _panel_layout(
     """Layered layout for panel patterns (consensus, debate).
 
     Groups nodes by parallel_group, then orders groups by dependency depth.
+    Large groups wrap into multiple sub-rows automatically.
     """
     usable_w = canvas_width - NODE_WIDTH - 2 * NODE_MARGIN_X
     usable_h = canvas_height - 2 * CANVAS_PAD
+    max_cols = max(1, int((canvas_width - 2 * NODE_MARGIN_X) // (NODE_WIDTH + 24)))
 
     # Group by parallel_group (or None)
     groups: Dict[Optional[str], List[str]] = {}
@@ -304,7 +339,16 @@ def _panel_layout(
 
     sorted_groups = sorted(groups.values(), key=group_min_depth)
 
-    num_rows = len(sorted_groups)
+    # Expand groups that exceed max_cols into multiple visual rows
+    visual_rows: List[List[str]] = []
+    for members in sorted_groups:
+        if len(members) <= max_cols:
+            visual_rows.append(members)
+        else:
+            for i in range(0, len(members), max_cols):
+                visual_rows.append(members[i : i + max_cols])
+
+    num_rows = len(visual_rows)
     if num_rows == 0:
         return {}
 
@@ -314,8 +358,8 @@ def _panel_layout(
     if num_rows == 1:
         start_y = canvas_height / 2
 
-    positions = {}
-    for row_idx, members in enumerate(sorted_groups):
+    positions: Dict[str, Tuple[float, float]] = {}
+    for row_idx, members in enumerate(visual_rows):
         y = start_y + row_idx * row_spacing if num_rows > 1 else start_y
         n = len(members)
         if n == 1:
@@ -391,9 +435,13 @@ def _layered_layout(
     canvas_width: int,
     canvas_height: int,
 ) -> Dict[str, Tuple[float, float]]:
-    """Generic layered layout by topological depth."""
+    """Generic layered layout by topological depth.
+
+    Large layers wrap into multiple visual rows automatically.
+    """
     usable_w = canvas_width - NODE_WIDTH - 2 * NODE_MARGIN_X
     usable_h = canvas_height - 2 * CANVAS_PAD
+    max_cols = max(1, int((canvas_width - 2 * NODE_MARGIN_X) // (NODE_WIDTH + 24)))
 
     name_to_node = {n["name"]: n for n in nodes}
     depth_cache: Dict[str, int] = {}
@@ -418,7 +466,17 @@ def _layered_layout(
         layers.setdefault(d, []).append(n["name"])
 
     sorted_layers = sorted(layers.items())
-    num_rows = len(sorted_layers)
+
+    # Expand layers that exceed max_cols into multiple visual rows
+    visual_rows: List[List[str]] = []
+    for _, members in sorted_layers:
+        if len(members) <= max_cols:
+            visual_rows.append(members)
+        else:
+            for i in range(0, len(members), max_cols):
+                visual_rows.append(members[i : i + max_cols])
+
+    num_rows = len(visual_rows)
     if num_rows == 0:
         return {}
 
@@ -427,8 +485,8 @@ def _layered_layout(
     if num_rows == 1:
         start_y = canvas_height / 2
 
-    positions = {}
-    for row_idx, (_, members) in enumerate(sorted_layers):
+    positions: Dict[str, Tuple[float, float]] = {}
+    for row_idx, members in enumerate(visual_rows):
         y = start_y + row_idx * row_spacing if num_rows > 1 else start_y
         n = len(members)
         if n == 1:
@@ -1172,6 +1230,51 @@ class GraphMonitorApp:
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             return None
 
+    def _check_status_staleness(self, status: Dict[str, Any]) -> Dict[str, Any]:
+        """Detect stale status: if status.json hasn't been updated recently but
+        agents are still marked as running, the orchestrator likely crashed.
+        Mark those agents as failed so the GUI reflects reality.
+        """
+        updated_at_str = status.get("updated_at")
+        if not updated_at_str:
+            return status
+
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str)
+        except (ValueError, TypeError):
+            return status
+
+        # Also check file mtime as a secondary signal -- if the file itself
+        # is stale, the orchestrator is definitely not writing to it.
+        try:
+            file_mtime = os.path.getmtime(self.status_path)
+            file_age_s = (datetime.now().timestamp() - file_mtime)
+        except OSError:
+            file_age_s = 0.0
+
+        now = datetime.now(timezone.utc).astimezone()
+        age_s = (now - updated_at).total_seconds()
+
+        # Use whichever staleness signal is larger
+        stale_s = max(age_s, file_age_s)
+
+        if stale_s < STALE_THRESHOLD_S:
+            return status
+
+        # Check if any nodes are still marked "running"
+        any_running = False
+        nodes = status.get("nodes", {})
+        for node_data in nodes.values():
+            if node_data.get("state") == "running":
+                any_running = True
+                node_data["state"] = "failed"
+
+        if any_running and status.get("state") not in ("completed", "failed"):
+            status["state"] = "failed"
+            status["activity"] = "Orchestrator unresponsive (status stale)"
+
+        return status
+
     # -- Polling --
 
     def _schedule_poll(self) -> None:
@@ -1190,6 +1293,7 @@ class GraphMonitorApp:
 
         status = self._read_status()
         if status is not None:
+            status = self._check_status_staleness(status)
             self.last_status = status
             self._apply_status(status)
 
