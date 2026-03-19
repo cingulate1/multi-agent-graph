@@ -7,6 +7,15 @@ description: "Guides the user through selecting and configuring a multi-agent ex
 
 This skill instructs Claude on how to guide the user through setting up a multi-agent execution pattern for their task.
 
+## Phase 0: Load Plugin Configuration
+
+Before asking the user anything, resolve the plugin data directory and check for saved settings:
+
+1. Run `echo $CLAUDE_PLUGIN_DATA` via Bash to get the plugin data directory path. Store this as `{data_dir}`.
+2. Try to read `{data_dir}/config.json`.
+3. If the file exists and contains a `run_directory` value and `prompt_for_directory` is `false`: store the run directory for use in Phase 2. You will not need to ask the user about it.
+4. Otherwise (file missing, `prompt_for_directory` is `true`, or key absent): you will ask the user during Phase 1.
+
 ## Phase 1: Socratic Dialogue
 
 All user-facing questions happen in this phase. By the end of Phase 1, Claude should know the exact graph — every node, every edge, every model assignment — but nothing has been scaffolded or generated yet.
@@ -19,7 +28,28 @@ Ask the user what they want accomplished. Listen for:
 - Whether the work can be parallelized
 - Whether iterative refinement is needed
 
-If the user already described their task when invoking the command, move directly to pattern recommendation.
+If the user already described their task when invoking the command, move directly to resolving the run directory (or pattern recommendation if the directory is already configured).
+
+### Resolve Run Directory
+
+If Phase 0 already resolved a default run directory, skip this step.
+
+Otherwise, ask the user:
+
+> Where should I put the run directory for this workflow? This directory will contain agent outputs, logs, and scoring artifacts. Example: `C:/temp/multi-agent-runs`
+
+After the user provides a directory:
+- Ask if they want to save this as their default for future runs (skipping this question next time).
+- If yes, write `{data_dir}/config.json`:
+  ```json
+  {
+    "run_directory": "<user's choice>",
+    "prompt_for_directory": false
+  }
+  ```
+- If no, use the directory for this run only without saving.
+
+Store the resolved directory path as `{run_directory}` for use in Phase 2.
 
 ### The Seven Patterns
 
@@ -107,9 +137,9 @@ The user has confirmed the full configuration. No more questions — execute the
 
 ### Generate Run Directory
 
-Create the run directory:
+Create the run directory using the `{run_directory}` resolved in Phase 1 (or Phase 0):
 ```
-{PLUGIN_ROOT}/runs/{YYMMDD}_{slug}/
+{run_directory}/{YYMMDD}_{slug}/
   output/
   agents/
   logs/
