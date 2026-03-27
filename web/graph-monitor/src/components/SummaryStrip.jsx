@@ -22,7 +22,6 @@ export default function SummaryStrip({ snapshot, stats }) {
         <div className="summary-meta-line">
           <span className={`summary-state-pill pill-${state}`}>{state}</span>
           <span>{snapshot?.meta?.dataMode ?? "plan-only"}</span>
-          {snapshot?.meta?.stale ? <span>Stale after {Math.round(snapshot.meta.staleSeconds)}s</span> : null}
         </div>
         <div className="summary-run-dir">{snapshot?.runDir ?? ""}</div>
       </div>

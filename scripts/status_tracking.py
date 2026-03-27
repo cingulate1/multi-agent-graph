@@ -269,13 +269,12 @@ class RunStatusTracker:
         """Background loop: parse active logs, update token counts in status.
 
         The displayed total = cumulative (finalized rounds) + live (current logs).
+        Always writes to keep updated_at fresh (heartbeat) so the graph
+        monitor doesn't falsely mark the orchestrator as stale.
         """
         while not self._poller_stop.wait(2.0):
             with self._lock:
                 snapshot = {k: list(v) for k, v in self._active_logs.items()}
-            if not snapshot:
-                continue
-            changed = False
             with self._lock:
                 for name, log_paths in snapshot.items():
                     live_in = 0
@@ -295,9 +294,7 @@ class RunStatusTracker:
                     if display_in != old.get("input", 0) or display_out != old.get("output", 0):
                         node["tokens"]["input"] = display_in
                         node["tokens"]["output"] = display_out
-                        changed = True
-                if changed:
-                    self._write_locked()
+                self._write_locked()
 
     # -- Token parsing --
 
