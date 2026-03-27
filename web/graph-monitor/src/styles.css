@@ -201,9 +201,14 @@ button {
 }
 
 .sidebar-stack {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(260px, 38%);
+  display: flex;
+  flex-direction: column;
   gap: 18px;
+}
+
+.sidebar-stack > .panel:not(.is-collapsed) {
+  flex: 1;
+  min-height: 0;
 }
 
 .panel {
@@ -214,12 +219,51 @@ button {
   animation: rise-in 260ms ease-out;
 }
 
+.panel.is-collapsed {
+  padding-bottom: 14px;
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.is-collapsed .panel-heading {
+  margin-bottom: 0;
+}
+
+.panel-heading-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.panel-heading-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collapse-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(49, 85, 132, 0.06);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .graph-toolbar {
@@ -608,8 +652,8 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .sidebar-stack {
-    grid-template-rows: auto auto;
+  .sidebar-stack > .panel:not(.is-collapsed) {
+    flex: none;
   }
 
   .graph-canvas-shell {

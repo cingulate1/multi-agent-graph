@@ -126,6 +126,8 @@ export default function App() {
   const [emphasizeActive, setEmphasizeActive] = useState(false);
   const [showHeartbeats, setShowHeartbeats] = useState(false);
   const [previewPath, setPreviewPath] = useState("");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const deferredSearch = useDeferredValue(searchTerm);
 
   useEffect(() => {
@@ -255,6 +257,8 @@ export default function App() {
             onPreview={setPreviewPath}
             onSelectNode={setSelectedNodeId}
             finalOutput={snapshot?.finalOutput}
+            collapsed={!inspectorOpen}
+            onToggleCollapsed={() => setInspectorOpen((v) => !v)}
           />
           <TimelinePanel
             events={timeline}
@@ -262,6 +266,8 @@ export default function App() {
             showHeartbeats={showHeartbeats}
             onToggleHeartbeats={() => setShowHeartbeats((current) => !current)}
             onSelectNode={setSelectedNodeId}
+            collapsed={!timelineOpen}
+            onToggleCollapsed={() => setTimelineOpen((v) => !v)}
           />
         </div>
       </main>
