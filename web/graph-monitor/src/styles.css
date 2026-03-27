@@ -190,7 +190,12 @@ button {
   min-height: calc(100vh - 182px);
 }
 
-.graph-panel,
+.graph-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .sidebar-stack {
   min-height: 0;
 }
@@ -262,7 +267,8 @@ button {
 
 .graph-canvas-shell {
   position: relative;
-  min-height: calc(100vh - 312px);
+  flex: 1;
+  min-height: 0;
   border-radius: 22px;
   overflow: hidden;
   background:
