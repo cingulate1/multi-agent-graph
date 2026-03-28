@@ -312,7 +312,7 @@ button {
 .graph-canvas-shell {
   position: relative;
   flex: 1;
-  min-height: 0;
+  min-height: max(420px, calc(100vh - 312px));
   border-radius: 22px;
   overflow: hidden;
   background:
