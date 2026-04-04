@@ -80,6 +80,43 @@ export function normalizeDisplayState(value) {
   return value;
 }
 
+export function formatRelativeTime(ts) {
+  if (!ts) {
+    return "";
+  }
+
+  let date = new Date(ts);
+  if (Number.isNaN(date.getTime())) {
+    const match = ts.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+    if (match) {
+      date = new Date();
+      date.setHours(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10), 0);
+    } else {
+      return ts;
+    }
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 0) {
+    return "just now";
+  }
+
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) {
+    return "just now";
+  }
+  if (diffMin < 60) {
+    return `${diffMin} m ago`;
+  }
+
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) {
+    return `${diffHr} h ago`;
+  }
+
+  return `${Math.floor(diffHr / 24)} d ago`;
+}
+
 export function trimText(value, maxLength = 180) {
   if (!value) {
     return "";

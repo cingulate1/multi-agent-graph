@@ -1,10 +1,9 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react";
+import { startTransition, useEffect, useMemo, useState } from "react";
+import { Background, ReactFlow, useReactFlow } from "@xyflow/react";
 import GraphNode from "./components/GraphNode";
 import { CycleEdge, LoopEdge } from "./components/GraphEdge";
 import InspectorPanel from "./components/InspectorPanel";
 import SummaryStrip from "./components/SummaryStrip";
-import TimelinePanel from "./components/TimelinePanel";
 import { buildGraphSnapshot, filterTimelineEvents } from "./lib/graph";
 
 const POLL_INTERVAL_MS = 1500;
@@ -118,17 +117,25 @@ function usePreview(path) {
   return { preview, loading, error };
 }
 
+function FitViewButton() {
+  const { fitView } = useReactFlow();
+  return (
+    <button
+      type="button"
+      className="fit-view-button"
+      onClick={() => fitView({ padding: 0.14, maxZoom: 1.2 })}
+      title="Fit to window"
+    >
+      Fit
+    </button>
+  );
+}
+
 export default function App() {
   const { snapshot, loading, error } = useSnapshotPolling();
   const [layoutDirection, setLayoutDirection] = useState("TB");
-  const [searchTerm, setSearchTerm] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [emphasizeActive, setEmphasizeActive] = useState(false);
-  const [showHeartbeats, setShowHeartbeats] = useState(false);
   const [previewPath, setPreviewPath] = useState("");
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const deferredSearch = useDeferredValue(searchTerm);
 
   useEffect(() => {
     if (!snapshot?.plan?.nodes?.length) {
@@ -151,22 +158,16 @@ export default function App() {
     () =>
       buildGraphSnapshot(snapshot, {
         layoutDirection,
-        searchTerm: deferredSearch,
         selectedNodeId,
-        emphasizeActive,
       }),
-    [deferredSearch, emphasizeActive, layoutDirection, selectedNodeId, snapshot],
+    [layoutDirection, selectedNodeId, snapshot],
   );
 
   const previewState = usePreview(previewPath);
   const selectedNode = selectedNodeId ? graph.nodeLookup[selectedNodeId] : null;
   const nodeTimeline = useMemo(
-    () => filterTimelineEvents(snapshot?.timeline, selectedNodeId, showHeartbeats),
-    [selectedNodeId, showHeartbeats, snapshot?.timeline],
-  );
-  const globalTimeline = useMemo(
-    () => filterTimelineEvents(snapshot?.timeline, null, showHeartbeats),
-    [showHeartbeats, snapshot?.timeline],
+    () => filterTimelineEvents(snapshot?.timeline, selectedNodeId, false),
+    [selectedNodeId, snapshot?.timeline],
   );
 
   return (
@@ -174,7 +175,7 @@ export default function App() {
       <div className="app-background" />
       <SummaryStrip snapshot={snapshot} stats={graph.stats} />
 
-      <main className="app-grid">
+      <main className="app-main">
         <section className="panel graph-panel">
           <div className="panel-heading">
             <div>
@@ -182,18 +183,8 @@ export default function App() {
               <h2>Execution topology</h2>
             </div>
             <div className="graph-toolbar">
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search nodes, groups, or models"
-                className="graph-search"
-              />
               <button type="button" className="subtle-button" onClick={() => setLayoutDirection((current) => (current === "TB" ? "LR" : "TB"))}>
                 {layoutDirection === "TB" ? "Left-to-right" : "Top-to-bottom"}
-              </button>
-              <button type="button" className={emphasizeActive ? "subtle-button is-active" : "subtle-button"} onClick={() => setEmphasizeActive((current) => !current)}>
-                Emphasize active
               </button>
             </div>
           </div>
@@ -203,7 +194,7 @@ export default function App() {
           <div className="graph-canvas-shell">
             {loading && !snapshot ? <div className="graph-overlay">Loading run data…</div> : null}
             {!snapshot?.plan?.nodes?.length ? (
-              <div className="graph-overlay">Waiting for `execution_plan.json`…</div>
+              <div className="graph-overlay">Waiting for execution_plan.json…</div>
             ) : (
               <ReactFlow
                 key={`${layoutDirection}-${snapshot?.meta?.planMtimeNs ?? 0}`}
@@ -217,63 +208,31 @@ export default function App() {
                 proOptions={{ hideAttribution: true }}
                 minZoom={0.2}
                 maxZoom={2}
+                nodesConnectable={false}
+                elementsSelectable={false}
               >
                 <Background color="#cad3df" gap={18} size={1} />
-                <MiniMap
-                  pannable
-                  zoomable
-                  className="graph-minimap"
-                  nodeColor={(node) => {
-                    const displayState = node.data?.displayState ?? "pending";
-                    if (displayState === "failed" || displayState === "cancelled" || displayState === "terminated") {
-                      return "#d65245";
-                    }
-                    if (displayState === "completed") {
-                      return "#2e8b65";
-                    }
-                    if (displayState === "writing") {
-                      return "#8c6f1f";
-                    }
-                    if (displayState === "reading") {
-                      return "#2f6f78";
-                    }
-                    return "#3f6aa1";
-                  }}
-                />
-                <Controls showInteractive={false} />
+                <FitViewButton />
               </ReactFlow>
             )}
           </div>
         </section>
 
-        <div className="sidebar-stack">
-          <InspectorPanel
-            selectedNode={selectedNode}
-            timeline={nodeTimeline}
-            previewPath={previewPath}
-            preview={
-              previewState.loading
-                ? { path: previewPath, content: "Loading preview…" }
-                : previewState.error
-                  ? { path: previewPath, content: previewState.error }
-                  : previewState.preview
-            }
-            onPreview={setPreviewPath}
-            onSelectNode={setSelectedNodeId}
-            finalOutput={snapshot?.finalOutput}
-            collapsed={!inspectorOpen}
-            onToggleCollapsed={() => setInspectorOpen((v) => !v)}
-          />
-          <TimelinePanel
-            events={globalTimeline}
-            selectedNodeId={null}
-            showHeartbeats={showHeartbeats}
-            onToggleHeartbeats={() => setShowHeartbeats((current) => !current)}
-            onSelectNode={setSelectedNodeId}
-            collapsed={!timelineOpen}
-            onToggleCollapsed={() => setTimelineOpen((v) => !v)}
-          />
-        </div>
+        <InspectorPanel
+          selectedNode={selectedNode}
+          timeline={nodeTimeline}
+          previewPath={previewPath}
+          preview={
+            previewState.loading
+              ? { path: previewPath, content: "Loading preview…" }
+              : previewState.error
+                ? { path: previewPath, content: previewState.error }
+                : previewState.preview
+          }
+          onPreview={setPreviewPath}
+          onSelectNode={setSelectedNodeId}
+          finalOutput={snapshot?.finalOutput}
+        />
       </main>
     </div>
   );

@@ -336,20 +336,19 @@ class RunStatusTracker:
 
     @staticmethod
     def _parse_log_tokens(log_path: Path) -> tuple:
-        """Return (input_tokens, output_tokens) from a stream-json log.
+        """Return (context_tokens, output_tokens) from a stream-json log.
 
         Reads both ``assistant`` events (available mid-execution) and the
-        final ``result`` event.
+        final ``result`` event.  Assistant messages are deduplicated by ID.
 
-        For the live display, cache read/write tokens are intentionally
-        excluded so the counter tracks Claude Code's visible input/output
-        usage rather than cache bookkeeping. Assistant messages are also
-        deduplicated by message ID, since stream-json can emit multiple
-        records for the same message.
+        Context tokens = input + cache_creation + cache_read (full context
+        window size).  Each assistant message reports the full context for
+        that API call, so we keep the *latest* value (overwrite, not sum).
+        Output tokens are cumulative across messages.
         """
-        assistant_in = 0
+        assistant_ctx = 0
         assistant_out = 0
-        result_in = 0
+        result_ctx = 0
         result_out = 0
         seen_assistant_ids = set()
         try:
@@ -371,17 +370,26 @@ class RunStatusTracker:
                         if message_id:
                             seen_assistant_ids.add(message_id)
                         usage = message.get("usage", {})
-                        assistant_in += usage.get("input_tokens", 0)
+                        # Overwrite to latest context window size
+                        assistant_ctx = (
+                            usage.get("input_tokens", 0)
+                            + usage.get("cache_creation_input_tokens", 0)
+                            + usage.get("cache_read_input_tokens", 0)
+                        )
                         assistant_out += usage.get("output_tokens", 0)
                     elif etype == "result":
                         usage = obj.get("usage", {})
-                        result_in = usage.get("input_tokens", 0)
+                        result_ctx = (
+                            usage.get("input_tokens", 0)
+                            + usage.get("cache_creation_input_tokens", 0)
+                            + usage.get("cache_read_input_tokens", 0)
+                        )
                         result_out = usage.get("output_tokens", 0)
         except OSError:
             pass
-        total_in = result_in if result_in > 0 else assistant_in
+        total_ctx = result_ctx if result_ctx > 0 else assistant_ctx
         total_out = result_out if result_out > 0 else assistant_out
-        return total_in, total_out
+        return total_ctx, total_out
 
     def _append_event(self, level: str, message: str) -> None:
         events = self.data["events"]

@@ -3,7 +3,8 @@ import { MarkerType, Position } from "@xyflow/react";
 import { formatCompactNumber, normalizeDisplayState } from "./format";
 
 const NODE_WIDTH = 308;
-const NODE_HEIGHT = 176;
+const AGENT_NODE_HEIGHT = 197;
+const SCRIPT_NODE_HEIGHT = 120;
 
 const ACTIVE_STATES = new Set(["thinking", "reading", "writing", "running"]);
 const TERMINAL_STATES = new Set(["completed", "failed", "cancelled", "terminated"]);
@@ -33,24 +34,6 @@ function buildDependents(nodes) {
     }
   }
   return dependents;
-}
-
-function collectRelated(startName, adjacency) {
-  const related = new Set();
-  const queue = [startName];
-
-  while (queue.length) {
-    const current = queue.shift();
-    for (const next of adjacency[current] ?? []) {
-      if (related.has(next)) {
-        continue;
-      }
-      related.add(next);
-      queue.push(next);
-    }
-  }
-
-  return related;
 }
 
 function getCycleInfo(nodeName, cycles = [], cycleStates = {}) {
@@ -102,33 +85,17 @@ function resolveDisplayState(orchestratorState, runStatusRow) {
   return baseState;
 }
 
-function buildNodeData(node, snapshot, dependentsMap, selectedNodeId, searchTerm, emphasizeActive) {
+function buildNodeData(node, snapshot, dependentsMap, selectedNodeId) {
   const statusNode = snapshot.status?.nodes?.[node.name] ?? {};
   const runStatusRow = snapshot.runStatusMap[node.name] ?? null;
   const artifactInfo = snapshot.artifactsMap[node.name] ?? { outputs: [] };
   const cycleInfo = getCycleInfo(node.name, snapshot.plan?.cycles, snapshot.status?.cycles);
 
   const displayState = resolveDisplayState(statusNode.state, runStatusRow);
-  const totalTokens = Number(statusNode.tokens?.input ?? 0) + Number(statusNode.tokens?.output ?? 0);
+  const contextTokens = Number(statusNode.tokens?.input ?? 0);
+  const outputTokens = Number(statusNode.tokens?.output ?? 0);
   const outputCount = artifactInfo.outputs?.length ?? 0;
   const availableOutputs = artifactInfo.outputs?.filter((entry) => entry.exists).length ?? 0;
-
-  const matchesSearch =
-    !searchTerm ||
-    node.name.toLowerCase().includes(searchTerm) ||
-    (statusNode.model ?? snapshot.nodeModels?.[node.name] ?? "").toLowerCase().includes(searchTerm) ||
-    (node.parallel_group ?? "").toLowerCase().includes(searchTerm);
-
-  const relatedToSelection =
-    !selectedNodeId ||
-    selectedNodeId === node.name ||
-    snapshot.ancestorSet.has(node.name) ||
-    snapshot.descendantSet.has(node.name);
-
-  const active = ACTIVE_STATES.has(displayState);
-  const dimmed =
-    (!matchesSearch || !relatedToSelection || (emphasizeActive && !active)) &&
-    selectedNodeId !== node.name;
 
   const badgeLine = [];
   if (node.node_type === "script") {
@@ -159,12 +126,10 @@ function buildNodeData(node, snapshot, dependentsMap, selectedNodeId, searchTerm
     displayState,
     orchestratorState: normalizeDisplayState(statusNode.state ?? "pending"),
     activityState: normalizeDisplayState(runStatusRow?.state ?? ""),
-    totalTokens,
-    totalTokensLabel: totalTokens > 0 ? formatCompactNumber(totalTokens) : "—",
-    inputTokensLabel: runStatusRow?.tokensIn ?? (statusNode.tokens?.input ? formatCompactNumber(statusNode.tokens.input) : "—"),
-    outputTokensLabel: runStatusRow?.tokensOut ?? (statusNode.tokens?.output ? formatCompactNumber(statusNode.tokens.output) : "—"),
-    filesRead: runStatusRow?.filesRead ?? null,
-    outputKb: runStatusRow?.outputKb ?? null,
+    contextTokens,
+    contextLabel: contextTokens > 0 ? formatCompactNumber(contextTokens) : "—",
+    outputTokens,
+    outputLabel: outputTokens > 0 ? formatCompactNumber(outputTokens) : "—",
     badgeLine,
     outputSummary: `${availableOutputs}/${outputCount}`,
     outputCount,
@@ -173,8 +138,6 @@ function buildNodeData(node, snapshot, dependentsMap, selectedNodeId, searchTerm
     dependencies: [...(node.depends_on ?? [])],
     dependents: [...(dependentsMap[node.name] ?? [])],
     selected: selectedNodeId === node.name,
-    dimmed,
-    matchesSearch,
     cycleInfo,
     startedAt: statusNode.started_at ?? null,
     completedAt: statusNode.completed_at ?? null,
@@ -195,7 +158,8 @@ function layoutNodes(nodes, edges, layoutDirection) {
   });
 
   for (const node of nodes) {
-    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const nodeHeight = node.data.nodeType === "script" ? SCRIPT_NODE_HEIGHT : AGENT_NODE_HEIGHT;
+    graph.setNode(node.id, { width: NODE_WIDTH, height: nodeHeight });
   }
 
   for (const edge of edges) {
@@ -208,31 +172,23 @@ function layoutNodes(nodes, edges, layoutDirection) {
   dagre.layout(graph);
 
   return nodes.map((node) => {
-    const positioned = graph.node(node.id) ?? { x: NODE_WIDTH / 2, y: NODE_HEIGHT / 2 };
+    const nodeHeight = node.data.nodeType === "script" ? SCRIPT_NODE_HEIGHT : AGENT_NODE_HEIGHT;
+    const positioned = graph.node(node.id) ?? { x: NODE_WIDTH / 2, y: nodeHeight / 2 };
     return {
       ...node,
       position: {
         x: positioned.x - NODE_WIDTH / 2,
-        y: positioned.y - NODE_HEIGHT / 2,
+        y: positioned.y - nodeHeight / 2,
       },
     };
   });
 }
 
-function buildNormalEdges(plan, nodeIndex, selectedNodeId, ancestorSet, descendantSet) {
+function buildNormalEdges(plan, nodeIndex) {
   const edges = [];
 
   for (const node of plan.nodes ?? []) {
     for (const dependency of node.depends_on ?? []) {
-      const connectedToSelection =
-        !selectedNodeId ||
-        dependency === selectedNodeId ||
-        node.name === selectedNodeId ||
-        (ancestorSet.has(dependency) && ancestorSet.has(node.name)) ||
-        (descendantSet.has(dependency) && descendantSet.has(node.name)) ||
-        ancestorSet.has(node.name) ||
-        descendantSet.has(dependency);
-
       edges.push({
         id: `${dependency}->${node.name}`,
         source: dependency,
@@ -241,12 +197,13 @@ function buildNormalEdges(plan, nodeIndex, selectedNodeId, ancestorSet, descenda
         animated: ACTIVE_STATES.has(nodeIndex[node.name]?.data.displayState),
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: connectedToSelection ? "#315584" : "#8fa4bd",
+          color: "#315584",
+          width: 20,
+          height: 20,
         },
         style: {
-          stroke: connectedToSelection ? "#315584" : "#8fa4bd",
-          strokeWidth: connectedToSelection ? 2.1 : 1.4,
-          opacity: connectedToSelection ? 0.95 : 0.42,
+          stroke: "#315584",
+          strokeWidth: 2,
         },
       });
     }
@@ -353,37 +310,33 @@ export function buildGraphSnapshot(rawSnapshot, options) {
   }
 
   const selectedNodeId = options.selectedNodeId ?? null;
-  const searchTerm = (options.searchTerm ?? "").trim().toLowerCase();
-  const emphasizeActive = Boolean(options.emphasizeActive);
   const layoutDirection = options.layoutDirection === "LR" ? "LR" : "TB";
 
   const runStatusMap = buildRunStatusMap(rawSnapshot.runStatus);
   const artifactsMap = buildArtifactsMap(rawSnapshot.nodeArtifacts);
   const dependentsMap = buildDependents(plan.nodes);
-  const selectedNode = selectedNodeId ? plan.nodes.find((node) => node.name === selectedNodeId) : null;
-  const ancestorSet = selectedNode ? collectRelated(selectedNode.name, Object.fromEntries(plan.nodes.map((node) => [node.name, node.depends_on ?? []]))) : new Set();
-  const descendantSet = selectedNode ? collectRelated(selectedNode.name, dependentsMap) : new Set();
 
   const snapshot = {
     ...rawSnapshot,
     plan,
     runStatusMap,
     artifactsMap,
-    ancestorSet,
-    descendantSet,
   };
 
-  const baseNodes = plan.nodes.map((node) => ({
-    id: node.name,
-    type: "runNode",
-    sourcePosition: layoutDirection === "LR" ? Position.Right : Position.Bottom,
-    targetPosition: layoutDirection === "LR" ? Position.Left : Position.Top,
-    data: buildNodeData(node, snapshot, dependentsMap, selectedNodeId, searchTerm, emphasizeActive),
-    style: { width: NODE_WIDTH, height: NODE_HEIGHT },
-  }));
+  const baseNodes = plan.nodes.map((node) => {
+    const nodeHeight = (node.node_type ?? "agent") === "script" ? SCRIPT_NODE_HEIGHT : AGENT_NODE_HEIGHT;
+    return {
+      id: node.name,
+      type: "runNode",
+      sourcePosition: layoutDirection === "LR" ? Position.Right : Position.Bottom,
+      targetPosition: layoutDirection === "LR" ? Position.Left : Position.Top,
+      data: buildNodeData(node, snapshot, dependentsMap, selectedNodeId),
+      style: { width: NODE_WIDTH, height: nodeHeight },
+    };
+  });
 
   const nodeIndex = Object.fromEntries(baseNodes.map((node) => [node.id, node]));
-  const dependencyEdges = buildNormalEdges(plan, nodeIndex, selectedNodeId, ancestorSet, descendantSet);
+  const dependencyEdges = buildNormalEdges(plan, nodeIndex);
   const cycleEdges = buildCycleEdges(plan, rawSnapshot.status?.cycles, nodeIndex);
   const edges = [...dependencyEdges, ...cycleEdges];
   const nodes = layoutNodes(baseNodes, dependencyEdges, layoutDirection);
