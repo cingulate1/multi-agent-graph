@@ -25,6 +25,9 @@
 |----------|-------|
 | Decomposer | `Read,Write` |
 | Worker | `Read,Write` |
+| Deletion Worker | `Read,Write,Bash` |
+
+Deletion workers need `Write` to create their `.temp` deletion token and `Bash` to delete files.
 
 ## Generate This Topology
 
@@ -89,7 +92,9 @@ Write your output to {ABSOLUTE_OUTPUT_PATH}
 
 ## Agent Prompt: Deletion Worker
 
-When a worker's job is to delete files rather than produce artifacts (e.g., triaging a batch and removing files that fail a criterion), it writes a **deletion token** instead of a standard output. The execution plan declares its output as a `.temp` file (e.g., `output/{identifier}-deletions.temp`), and the orchestrator verifies every claimed deletion on completion.
+Use this template instead of the standard worker template when a worker's job is to **delete files** rather than produce artifacts (e.g., triaging a batch and removing files that fail a criterion). Required tools: **`Read,Write,Bash`** — `Read` to examine files, `Bash` to delete them, `Write` to create the deletion token.
+
+The worker writes a **deletion token** (a `.temp` file) instead of a standard output. The execution plan declares its output as a `.temp` file (e.g., `output/{identifier}-deletions.temp`), and the orchestrator verifies every claimed deletion on completion.
 
 The prompt validator enforces the same `Write your output to` final line — the path just points to the `.temp` file.
 
