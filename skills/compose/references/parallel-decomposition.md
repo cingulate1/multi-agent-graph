@@ -86,3 +86,35 @@ One prompt file per worker. Workers should contain only their assigned subtask.
 
 Write your output to {ABSOLUTE_OUTPUT_PATH}
 ```
+
+## Agent Prompt: Deletion Worker
+
+When a worker's job is to delete files rather than produce artifacts (e.g., triaging a batch and removing files that fail a criterion), it writes a **deletion token** instead of a standard output. The execution plan declares its output as a `.temp` file (e.g., `output/{identifier}-deletions.temp`), and the orchestrator verifies every claimed deletion on completion.
+
+The prompt validator enforces the same `Write your output to` final line — the path just points to the `.temp` file.
+
+```
+## Task
+
+{ASSIGNED_SUBTASK}
+
+{CONTEXT_INSTRUCTION}
+
+## Procedure
+
+For each file in your batch:
+1. Read the file.
+2. {EVALUATION_CRITERIA}
+3. If the file fails the criteria, delete it with the Bash tool, then record the deletion.
+4. If the file passes, move on to the next file.
+
+## Output
+
+A deletion token listing every file you deleted, one per line, in this exact format:
+
+"{ABSOLUTE_PATH_OF_DELETED_FILE}" was deleted
+
+If you deleted no files, write an empty file.
+
+Write your output to {ABSOLUTE_OUTPUT_PATH}
+```
