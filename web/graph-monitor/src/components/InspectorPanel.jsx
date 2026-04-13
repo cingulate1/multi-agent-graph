@@ -74,6 +74,10 @@ export default function InspectorPanel({
               <strong>{selectedNode.data.model}</strong>
             </div>
             <div>
+              <span>Effort</span>
+              <strong>{selectedNode.data.effortDisplay}</strong>
+            </div>
+            <div>
               <span>Started</span>
               <strong>{formatIsoTimestamp(selectedNode.data.startedAt)}</strong>
             </div>

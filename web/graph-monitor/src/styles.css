@@ -409,6 +409,45 @@ button {
   color: #40566f;
 }
 
+.node-effort-pill {
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.74rem;
+  line-height: 1;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.effort-low {
+  background: rgba(104, 121, 139, 0.12);
+  color: #526274;
+}
+
+.effort-medium {
+  background: rgba(49, 85, 132, 0.12);
+  color: #315584;
+}
+
+.effort-high {
+  background: rgba(155, 123, 24, 0.14);
+  color: #7a5e10;
+}
+
+.effort-max {
+  background: rgba(177, 73, 65, 0.14);
+  color: #933b33;
+}
+
+.effort-default {
+  background: rgba(49, 85, 132, 0.08);
+  color: #40566f;
+}
+
+.effort-na {
+  background: rgba(104, 121, 139, 0.08);
+  color: #7a8694;
+}
+
 .node-title {
   margin-top: 8px;
   font-family: "Bahnschrift", "Aptos Display", sans-serif;

@@ -29,6 +29,7 @@ export default function GraphNode({ data, sourcePosition = Position.Bottom, targ
       <Handle type="target" position={targetPosition} className="node-handle" />
       <div className="node-card-header">
         <span className="node-kind-pill">{kindLabel}</span>
+        {!isScript && <span className={`node-effort-pill effort-${data.effortDisplay.replace("/", "")}`}>effort: {data.effortDisplay}</span>}
         <span className={`node-state-pill pill-${data.displayState}`}>{data.displayState}</span>
       </div>
 

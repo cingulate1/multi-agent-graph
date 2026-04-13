@@ -164,6 +164,27 @@ def _load_node_models(run_dir: Path, plan: Dict[str, Any]) -> Dict[str, str]:
     return models
 
 
+_VALID_EFFORTS = {"low", "medium", "high", "max"}
+
+
+def _load_node_efforts(run_dir: Path, plan: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    """Return a mapping of node name → effort level (or None)."""
+    efforts: Dict[str, Optional[str]] = {}
+    for node in plan.get("nodes", []):
+        name = node["name"]
+        agent_file = node.get("agent_file")
+        effort = None
+        if agent_file:
+            for candidate in agent_path_candidates(run_dir, agent_file):
+                effort = read_agent_frontmatter(candidate).get("effort")
+                if effort:
+                    break
+        if not effort:
+            effort = node.get("effort")
+        efforts[name] = effort if effort in _VALID_EFFORTS else None
+    return efforts
+
+
 def _build_node_artifacts(run_dir: Path, plan: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     artifacts: Dict[str, Dict[str, Any]] = {}
     if not plan:
@@ -308,6 +329,7 @@ class GraphMonitorService:
 
         timeline = _read_timeline(self.timeline_path) if self.timeline_path.exists() else []
         node_models = _load_node_models(self.run_dir, plan) if plan else {}
+        node_efforts = _load_node_efforts(self.run_dir, plan) if plan else {}
         node_artifacts = _build_node_artifacts(self.run_dir, plan)
         final_output = _resolve_final_output(self.run_dir, plan, status)
 
@@ -330,6 +352,7 @@ class GraphMonitorService:
             "runStatus": run_status,
             "timeline": timeline,
             "nodeModels": node_models,
+            "nodeEfforts": node_efforts,
             "nodeArtifacts": node_artifacts,
             "finalOutput": final_output,
             "meta": {

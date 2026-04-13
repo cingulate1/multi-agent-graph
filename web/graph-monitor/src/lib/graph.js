@@ -97,6 +97,11 @@ function buildNodeData(node, snapshot, dependentsMap, selectedNodeId) {
   const outputCount = artifactInfo.outputs?.length ?? 0;
   const availableOutputs = artifactInfo.outputs?.filter((entry) => entry.exists).length ?? 0;
 
+  const effort = node.effort ?? snapshot.nodeEfforts?.[node.name] ?? null;
+  const modelLabel = statusNode.model ?? snapshot.nodeModels?.[node.name] ?? "Unknown";
+  const isHaiku = modelLabel.toLowerCase().includes("haiku");
+  const effortDisplay = isHaiku ? "n/a" : (effort ?? "default");
+
   const badgeLine = [];
   if (node.node_type === "script") {
     badgeLine.push("Script");
@@ -141,7 +146,9 @@ function buildNodeData(node, snapshot, dependentsMap, selectedNodeId) {
     cycleInfo,
     startedAt: statusNode.started_at ?? null,
     completedAt: statusNode.completed_at ?? null,
-    model: statusNode.model ?? snapshot.nodeModels?.[node.name] ?? "Unknown",
+    model: modelLabel,
+    effort,
+    effortDisplay,
   };
 }
 
