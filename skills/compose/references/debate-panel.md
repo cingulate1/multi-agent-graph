@@ -30,6 +30,10 @@
 
 Scoring uses a two-stage pipeline: **semantic evaluation** (Haiku LLM calls) followed by **deterministic scoring** (pure math).
 
+### Winning Condition
+
+The winning panelist is the one whose position attracted the most movement from peers while they themselves stayed most stable. Earlier-round dynamics are weighted more heavily than later-round ones.
+
 ### Stage 1: Semantic Evaluation
 
 For each round transition (k-1 → k), for each panelist, independent Haiku invocations answer two questions:
